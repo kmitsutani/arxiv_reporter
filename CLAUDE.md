@@ -23,7 +23,7 @@ The application requires these environment variables (set in run_reporter.sh):
 - `GMAIL_SENDER`: Email address for sending reports
 - `GMAIL_RECEIVER`: Email address for receiving reports
 - `GMAIL_APP_PASSWORD`: Gmail app password for authentication
-- `GITHUB_TOKEN`: GitHub personal access token for creating Gists (requires `gist` scope)
+- `GH_TOKEN`: GitHub personal access token for creating Gists (requires `gist` scope)
 
 ## Architecture
 

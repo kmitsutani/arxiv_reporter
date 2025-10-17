@@ -166,10 +166,10 @@ def generate_markdown_report(processed_papers):
 
 def create_gist(markdown_content, public=False):
     """GitHub Gistを作成してURLを返す"""
-    github_token = os.getenv("GITHUB_TOKEN")
+    github_token = os.getenv("GH_TOKEN")
 
     if not github_token:
-        print("Warning: GITHUB_TOKEN environment variable not set. Skipping Gist creation.")
+        print("Warning: GH_TOKEN environment variable not set. Skipping Gist creation.")
         return None
 
     now = datetime.now()
