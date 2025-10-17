@@ -11,6 +11,9 @@ __pycache__/
 .env.local
 run_reporter.sh
 
+# Reports
+reports/
+
 # IDE
 .vscode/
 .idea/
