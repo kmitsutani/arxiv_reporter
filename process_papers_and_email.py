@@ -1,10 +1,7 @@
 # process_papers_and_email.py
-import html
 import os
-import pathlib
 import smtplib
 import time
-import webbrowser
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -118,124 +115,13 @@ def extract_arxiv_id(arxiv_url):
     return arxiv_url.split('/')[-1]
 
 
-def escape_html_preserve_math(text):
-    r"""MathJax数式を保持しながらHTMLエスケープする
-
-    LaTeX数式記号（$, \(, \), \[, \]など）はそのまま保持し、
-    HTMLの特殊文字（<, >, &）のみをエスケープする。
-    また、数式記号の周辺に適切なスペースを挿入してMathJaxの認識を改善する。
-    """
-    import re
-
-    # まず基本的なHTMLエスケープ（数式記号は含まない）
-    text = text.replace('&', '&amp;')
-    text = text.replace('<', '&lt;')
-    text = text.replace('>', '&gt;')
-    text = text.replace('"', '&quot;')
-
-    # インライン数式 $...$ の周辺にスペースを確保
-    # 前にスペースがない場合は追加（ただし文頭は除く）
-    text = re.sub(r'(?<!\s)(?<!^)\$', r' $', text)
-    # 後ろにスペースがない場合は追加（ただし文末、句読点の前は除く）
-    text = re.sub(r'\$(?!\s)(?![.,;:!?\)])', r'$ ', text)
-
-    # \(...\) 形式のインライン数式の周辺にもスペースを確保
-    text = re.sub(r'(?<!\s)\\\(', r' \\(', text)
-    text = re.sub(r'\\\)(?!\s)(?![.,;:!?\)])', r'\\) ', text)
-
-    return text
-
-
-def generate_html_report(processed_papers):
-    """HTMLレポートを直接生成する"""
+def generate_markdown_report(processed_papers):
+    """GitHub Flavored Markdownレポートを生成する"""
     today_str = datetime.now().strftime("%Y-%m-%d")
-    html_content = f"""
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>arXiv 論文レポート ({today_str})</title>
-        <script type="text/javascript" id="MathJax-script" async
-            src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
-        </script>
-        <script>
-            MathJax = {{
-                tex: {{
-                    inlineMath: [['$', '$'], ['\\(', '\\)']],
-                    displayMath: [['$$', '$$'], ['\\[', '\\]']]
-                }}
-            }};
-        </script>
-        <style>
-            body {{ font-family: sans-serif; line-height: 1.6; color: #333; max-width: 1200px; margin: 0 auto; padding: 20px; }}
-            h1, h2, h3 {{ color: #0056b3; }}
-            h1 {{ border-bottom: 3px solid #0056b3; padding-bottom: 10px; }}
-            h2 {{ border-bottom: 2px solid #0056b3; padding-bottom: 5px; margin-top: 40px; }}
-            h3 {{ border-bottom: 1px solid #ccc; padding-bottom: 3px; }}
-            .paper-header {{
-                position: relative;
-            }}
-            .paper-header:hover::after {{
-                content: "🔗";
-                position: absolute;
-                margin-left: 10px;
-                opacity: 0.7;
-                cursor: pointer;
-            }}
-            .paper-meta {{
-                color: #666;
-                font-size: 0.9em;
-                margin: 10px 0;
-            }}
-            .keywords {{
-                background-color: #e3f2fd;
-                padding: 5px 10px;
-                border-radius: 5px;
-                font-weight: bold;
-                margin: 10px 0;
-            }}
-            .abstract {{
-                border-left: 5px solid #eee;
-                padding: 15px 20px;
-                margin: 20px 0;
-                background-color: #f9f9f9;
-                font-style: italic;
-            }}
-            table {{
-                border-collapse: collapse;
-                width: 100%;
-                margin: 20px 0;
-            }}
-            th, td {{
-                border: 1px solid #ddd;
-                padding: 8px;
-                text-align: left;
-            }}
-            th {{
-                background-color: #f2f2f2;
-                font-weight: bold;
-            }}
-            a {{ color: #007bff; text-decoration: none; }}
-            a:hover {{ text-decoration: underline; }}
-            .no-papers {{
-                text-align: center;
-                padding: 50px;
-                color: #666;
-                font-size: 1.2em;
-            }}
-            hr {{
-                border: none;
-                height: 2px;
-                background-color: #eee;
-                margin: 30px 0;
-            }}
-        </style>
-    </head>
-    <body>
-        <h1>arXiv 論文レポート ({today_str})</h1>
-    """
+    md_content = f"# arXiv 論文レポート ({today_str})\n\n"
 
     if not processed_papers:
-        html_content += '<div class="no-papers">本日、キーワードに合致する新着論文はありませんでした。</div>'
+        md_content += "_本日、キーワードに合致する新着論文はありませんでした。_\n"
     else:
         processed_papers.sort(key=lambda p: p.get("preprint_score", 0), reverse=True)
         for i, paper in enumerate(processed_papers):
@@ -245,51 +131,41 @@ def generate_html_report(processed_papers):
             paper_id = extract_arxiv_id(paper['id'])
             published_date = pd.to_datetime(paper['published']).strftime('%Y-%m-%d %H:%M')
 
-            html_content += f"""
-        <h2 class="paper-header">
-            <a id="{paper_id}">■</a>
-            <a href="{paper['url']}" target="_blank">{escape_html_preserve_math(paper['title'])}</a>
-            {score_emoji} Score: {score} ({score_label})
-        </h2>
+            # 論文タイトルとスコア
+            md_content += f"## {score_emoji} [{paper['title']}]({paper['url']})\n\n"
+            md_content += f"**Score: {score} ({score_label})**\n\n"
 
-        <div class="keywords">Keywords: {' • '.join(paper['keywords'])}</div>
-        <div class="paper-meta">公開日: {published_date}</div>
-        """
+            # キーワード
+            md_content += f"**Keywords:** {' • '.join(paper['keywords'])}\n\n"
 
+            # 公開日
+            md_content += f"**公開日:** {published_date}\n\n"
+
+            # 著者情報
             if paper.get("authors_evaluation"):
-                html_content += """
-        <h3>著者情報 (Semantic Scholar)</h3>
-        <table>
-            <tr><th>著者</th><th>h-index</th><th>被引用数</th><th>論文数</th></tr>
-        """
+                md_content += "### 著者情報 (Semantic Scholar)\n\n"
+                md_content += "| 著者 | h-index | 被引用数 | 論文数 |\n"
+                md_content += "|------|---------|----------|--------|\n"
                 for author_eval in paper["authors_evaluation"]:
-                    html_content += f"""
-            <tr>
-                <td><a href="{author_eval['semantic_scholar_url']}" target="_blank">{html.escape(author_eval['name'])}</a></td>
-                <td>{author_eval['hIndex']}</td>
-                <td>{author_eval['citations']:,}</td>
-                <td>{author_eval['papers']}</td>
-            </tr>
-        """
-                html_content += "</table>"
+                    name = author_eval['name']
+                    url = author_eval['semantic_scholar_url']
+                    h_index = author_eval['hIndex']
+                    citations = f"{author_eval['citations']:,}"
+                    papers = author_eval['papers']
+                    md_content += f"| [{name}]({url}) | {h_index} | {citations} | {papers} |\n"
+                md_content += "\n"
 
-            html_content += f"""
-        <h3>アブストラクト (原文)</h3>
-        <div class="abstract">{escape_html_preserve_math(paper.get('summary', 'N/A'))}</div>
-        <hr>
-        """
+            # アブストラクト
+            md_content += "### アブストラクト (原文)\n\n"
+            md_content += f"> {paper.get('summary', 'N/A')}\n\n"
+            md_content += "---\n\n"
 
-    html_content += """
-    </body>
-    </html>
-    """
-
-    return html_content
+    return md_content
 
 
 
-def get_github_html_url():
-    """git remoteの情報からGitHub上のHTMLファイルURLを生成する"""
+def get_github_markdown_url():
+    """git remoteの情報からGitHub上のMarkdownファイルURLを生成する"""
     import subprocess
     import re
 
@@ -339,9 +215,9 @@ def get_github_html_url():
         now = datetime.now()
         year = now.strftime("%Y")
         date_str = now.strftime("%Y%m%d")
-        relative_path = f"reports/{year}/{date_str}.html"
+        relative_path = f"reports/{year}/{date_str}.md"
 
-        # GitHub上のHTMLファイルURLを生成
+        # GitHub上のMarkdownファイルURLを生成
         github_url = f"https://github.com/{user}/{repo}/blob/{branch}/{relative_path}"
         return github_url
 
@@ -350,27 +226,27 @@ def get_github_html_url():
         return None
 
 
-def save_html_report(html_content):
-    """HTMLレポートをローカルファイルとして保存する"""
+def save_markdown_report(markdown_content):
+    """Markdownレポートをローカルファイルとして保存する"""
     now = datetime.now()
     year = now.strftime("%Y")
     date_str = now.strftime("%Y%m%d")
 
     # ディレクトリ作成（reportsディレクトリ以下に保存）
-    html_dir = os.path.join(REPORTS_DIR, year)
-    os.makedirs(html_dir, exist_ok=True)
+    report_dir = os.path.join(REPORTS_DIR, year)
+    os.makedirs(report_dir, exist_ok=True)
 
-    # HTMLファイル保存
-    html_filepath = os.path.join(html_dir, f"{date_str}.html")
-    with open(html_filepath, "w", encoding="utf-8") as f:
-        f.write(html_content)
+    # Markdownファイル保存
+    md_filepath = os.path.join(report_dir, f"{date_str}.md")
+    with open(md_filepath, "w", encoding="utf-8") as f:
+        f.write(markdown_content)
 
-    print(f"HTML report saved: {html_filepath}")
+    print(f"Markdown report saved: {md_filepath}")
 
-    # GitHub上のHTMLファイルURLを取得
-    github_url = get_github_html_url()
+    # GitHub上のMarkdownファイルURLを取得
+    github_url = get_github_markdown_url()
 
-    return html_filepath, github_url
+    return md_filepath, github_url
 
 
 def send_email_summary(paper_count, report_filepath, github_url=None):
@@ -429,7 +305,7 @@ def send_email_summary(paper_count, report_filepath, github_url=None):
 
 def main():
     papers_to_process = fetch_and_filter_papers()
-    
+
     processed_papers = []
     if papers_to_process:
         for i, paper in enumerate(papers_to_process):
@@ -446,14 +322,14 @@ def main():
             except Exception as e:
                 print(f"An error occurred while processing paper ID {paper['id']}: {e}")
                 continue
-    
+
     print("\nAll processing finished!")
 
-    # HTMLレポートを直接生成
-    html_report = generate_html_report(processed_papers)
+    # Markdownレポートを生成
+    markdown_report = generate_markdown_report(processed_papers)
 
-    # HTMLレポートをローカルファイルに保存
-    report_filepath, github_url = save_html_report(html_report)
+    # Markdownレポートをローカルファイルに保存
+    report_filepath, github_url = save_markdown_report(markdown_report)
 
     # 論文数とGitHub URLを含む簡潔なメールを送信
     send_email_summary(len(processed_papers), report_filepath, github_url)
