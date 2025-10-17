@@ -23,6 +23,7 @@ The application requires these environment variables (set in run_reporter.sh):
 - `GMAIL_SENDER`: Email address for sending reports
 - `GMAIL_RECEIVER`: Email address for receiving reports
 - `GMAIL_APP_PASSWORD`: Gmail app password for authentication
+- `GITHUB_TOKEN`: GitHub personal access token for creating Gists (requires `gist` scope)
 
 ## Architecture
 
@@ -31,15 +32,17 @@ The application requires these environment variables (set in run_reporter.sh):
 2. **Keyword Filtering**: Filters papers based on predefined physics/quantum field theory keywords
 3. **Author Evaluation** (`evaluate_authors_via_semantic_scholar()`): Uses Semantic Scholar API to get author metrics (h-index, citations, paper count)
 4. **Scoring**: Papers are scored based on the highest h-index among authors
-5. **Report Generation**: Creates both Markdown and HTML reports with author tables and paper rankings
-6. **Output**: Saves reports locally and sends email summaries with web links
+5. **Report Generation** (`generate_markdown_report()`): Creates GitHub Flavored Markdown reports with author tables and paper rankings
+6. **Gist Creation** (`create_gist()`): Creates a secret GitHub Gist for each daily report
+7. **Local Backup** (`save_markdown_report_locally()`): Saves a local copy in `reports/{year}/{date}.md`
+8. **Email Notification** (`send_email_summary()`): Sends email with Gist URL and paper count
 
 ### Key Configuration
 - **Keywords**: Focused on quantum field theory, algebraic QFT, conformal bootstrap, and related physics topics
 - **RSS Feeds**: arXiv high-energy physics theory, mathematical physics, and quantum physics
-- **Reports Directory**: `/home/kazuya/projects/arxiv-reporter/reports/`
-- **HTML Output**: `/var/www/html/arxiv_report/{year}/{date}.html`
-- **Web Access**: Reports accessible at `192.168.3.21/arxiv_report/{year}/{date}.html`
+- **Reports Directory**: `/home/kazuya/projects/arxiv-reporter/reports/` (local backup only)
+- **Output Format**: GitHub Flavored Markdown
+- **Distribution**: Secret GitHub Gist (new Gist created daily)
 
 ### Dependencies
 The main script imports: feedparser, markdown, pandas, requests, smtplib, and standard library modules for HTML processing, email handling, and file operations.

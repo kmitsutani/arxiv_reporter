@@ -164,70 +164,54 @@ def generate_markdown_report(processed_papers):
 
 
 
-def get_github_markdown_url():
-    """git remoteの情報からGitHub上のMarkdownファイルURLを生成する"""
-    import subprocess
-    import re
+def create_gist(markdown_content, public=False):
+    """GitHub Gistを作成してURLを返す"""
+    github_token = os.getenv("GITHUB_TOKEN")
+
+    if not github_token:
+        print("Warning: GITHUB_TOKEN environment variable not set. Skipping Gist creation.")
+        return None
+
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    filename = f"arxiv_report_{now.strftime('%Y%m%d')}.md"
+
+    # Gist APIリクエスト
+    url = "https://api.github.com/gists"
+    headers = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    data = {
+        "description": f"arXiv 論文レポート ({date_str})",
+        "public": public,
+        "files": {
+            filename: {
+                "content": markdown_content
+            }
+        }
+    }
 
     try:
-        # git remoteのURLを取得
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=SCRIPT_DIR,
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        print(f"Creating {'public' if public else 'secret'} Gist...")
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response.raise_for_status()
 
-        if result.returncode != 0:
-            return None
+        gist_data = response.json()
+        gist_url = gist_data.get("html_url")
+        print(f"Gist created successfully: {gist_url}")
 
-        remote_url = result.stdout.strip()
-
-        # SSH形式 (git@github.com:user/repo.git) またはHTTPS形式を解析
-        # SSH形式の場合
-        ssh_match = re.match(r'git@github\.com:(.+)/(.+?)(?:\.git)?$', remote_url)
-        if ssh_match:
-            user, repo = ssh_match.groups()
-        else:
-            # HTTPS形式の場合
-            https_match = re.match(r'https://github\.com/(.+)/(.+?)(?:\.git)?$', remote_url)
-            if https_match:
-                user, repo = https_match.groups()
-            else:
-                return None
-
-        # 現在のブランチ名を取得
-        branch_result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=SCRIPT_DIR,
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-
-        if branch_result.returncode != 0:
-            branch = "main"  # デフォルトブランチ
-        else:
-            branch = branch_result.stdout.strip()
-
-        # レポートファイルの相対パスを生成
-        now = datetime.now()
-        year = now.strftime("%Y")
-        date_str = now.strftime("%Y%m%d")
-        relative_path = f"reports/{year}/{date_str}.md"
-
-        # GitHub上のMarkdownファイルURLを生成
-        github_url = f"https://github.com/{user}/{repo}/blob/{branch}/{relative_path}"
-        return github_url
-
-    except Exception as e:
-        print(f"Failed to generate GitHub URL: {e}")
+        return gist_url
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to create Gist: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response status: {e.response.status_code}")
+            print(f"Response body: {e.response.text}")
         return None
 
 
-def save_markdown_report(markdown_content):
-    """Markdownレポートをローカルファイルとして保存する"""
+def save_markdown_report_locally(markdown_content):
+    """Markdownレポートをローカルファイルとして保存する（バックアップ用）"""
     now = datetime.now()
     year = now.strftime("%Y")
     date_str = now.strftime("%Y%m%d")
@@ -241,16 +225,12 @@ def save_markdown_report(markdown_content):
     with open(md_filepath, "w", encoding="utf-8") as f:
         f.write(markdown_content)
 
-    print(f"Markdown report saved: {md_filepath}")
-
-    # GitHub上のMarkdownファイルURLを取得
-    github_url = get_github_markdown_url()
-
-    return md_filepath, github_url
+    print(f"Markdown report saved locally: {md_filepath}")
+    return md_filepath
 
 
-def send_email_summary(paper_count, report_filepath, github_url=None):
-    """論文数とGitHub URLを含む簡潔なメールを送信する"""
+def send_email_summary(paper_count, gist_url=None, local_filepath=None):
+    """論文数とGist URLを含む簡潔なメールを送信する"""
     sender_email = os.getenv("GMAIL_SENDER")
     receiver_email = os.getenv("GMAIL_RECEIVER")
     app_password = os.getenv("GMAIL_APP_PASSWORD")
@@ -271,22 +251,22 @@ def send_email_summary(paper_count, report_filepath, github_url=None):
     msg['To'] = receiver_email
 
     # メール本文を作成
-    if github_url:
+    if gist_url:
         email_body = f"""arXiv デイリーレポート ({today_str})
 
 本日の関連論文数: {paper_count}件
 
-レポート閲覧: {github_url}
-
-ローカルファイル: {report_filepath}
+レポート閲覧: {gist_url}
 """
+        if local_filepath:
+            email_body += f"\nローカルバックアップ: {local_filepath}\n"
     else:
         email_body = f"""arXiv デイリーレポート ({today_str})
 
 本日の関連論文数: {paper_count}件
-
-レポートファイル: {report_filepath}
 """
+        if local_filepath:
+            email_body += f"\nレポートファイル: {local_filepath}\n"
 
     # テキストパートのアタッチ
     part_text = MIMEText(email_body, 'plain', 'utf-8')
@@ -328,11 +308,14 @@ def main():
     # Markdownレポートを生成
     markdown_report = generate_markdown_report(processed_papers)
 
-    # Markdownレポートをローカルファイルに保存
-    report_filepath, github_url = save_markdown_report(markdown_report)
+    # GitHub Gistを作成（Secret Gist）
+    gist_url = create_gist(markdown_report, public=False)
 
-    # 論文数とGitHub URLを含む簡潔なメールを送信
-    send_email_summary(len(processed_papers), report_filepath, github_url)
+    # ローカルにバックアップを保存
+    local_filepath = save_markdown_report_locally(markdown_report)
+
+    # 論文数とGist URLを含む簡潔なメールを送信
+    send_email_summary(len(processed_papers), gist_url=gist_url, local_filepath=local_filepath)
 
 
 if __name__ == "__main__":
