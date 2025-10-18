@@ -213,7 +213,7 @@ def save_markdown_report_locally(markdown_content):
     return md_filepath
 
 
-def send_email_summary(paper_count, gist_url=None, local_filepath=None):
+def send_email_summary(paper_count, gist_url=None):
     """論文数とGist URLを含む簡潔なメールを送信する"""
     sender_email = os.getenv("GMAIL_SENDER")
     receiver_email = os.getenv("GMAIL_RECEIVER")
@@ -242,15 +242,11 @@ def send_email_summary(paper_count, gist_url=None, local_filepath=None):
 
 レポート閲覧: {gist_url}
 """
-        if local_filepath:
-            email_body += f"\nローカルバックアップ: {local_filepath}\n"
     else:
         email_body = f"""arXiv デイリーレポート ({today_str})
 
 本日の関連論文数: {paper_count}件
 """
-        if local_filepath:
-            email_body += f"\nレポートファイル: {local_filepath}\n"
 
     # テキストパートのアタッチ
     part_text = MIMEText(email_body, 'plain', 'utf-8')
@@ -298,7 +294,7 @@ def main():
     gist_url = create_gist(markdown_report, public=False)
 
     # 論文数とGist URLを含む簡潔なメールを送信
-    send_email_summary(len(processed_papers), gist_url=gist_url, local_filepath=local_filepath)
+    send_email_summary(len(processed_papers), gist_url=gist_url)
 
 
 if __name__ == "__main__":
