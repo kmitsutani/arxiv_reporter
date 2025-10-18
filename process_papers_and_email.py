@@ -1,5 +1,6 @@
 # process_papers_and_email.py
 import os
+import json
 import smtplib
 import time
 from datetime import datetime
@@ -10,25 +11,11 @@ import feedparser
 import pandas as pd
 import requests
 
-KEYWORDS = [
-    "axiomatic quantum field theory", "algebraic quantum field theory", "AQFT", "Ryu-Takayanagi",
-    "measurement-induced", "resource theory", "resource theoretic",
-    "Haag", "LSZ", "conformal bootstrap", "duality",
-    "non-perturbative", "Yang Mills", "Renormalization Group", "MERA",
-]
-RSS_FEEDS = [
-    "https://rss.arxiv.org/rss/hep-th", "https://rss.arxiv.org/rss/math-ph",
-    "https://rss.arxiv.org/rss/quant-ph",
-]
-# スクリプトのディレクトリを基準にreportsディレクトリのパスを設定
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPORTS_DIR = os.path.join(SCRIPT_DIR, "reports")
 
-
-def fetch_and_filter_papers():
+def fetch_and_filter_papers(rss_feeds, keywords):
     print("Fetching papers from RSS feeds...")
     unique_papers = {}
-    for url in RSS_FEEDS:
+    for url in rss_feeds:
         print(f"  - Fetching {url}")
         feed = feedparser.parse(url)
         for entry in feed.entries:
@@ -41,11 +28,11 @@ def fetch_and_filter_papers():
         title_lower = entry.title.lower()
         summary_lower = entry.summary.lower()
         is_hit = [keyword.lower() in title_lower or keyword.lower()
-                  in summary_lower for keyword in KEYWORDS]
+                  in summary_lower for keyword in keywords]
 
         if sum(is_hit) > 0:
             true_idx = [i for i, val in enumerate(is_hit) if val]
-            hit_keywords = [KEYWORDS[i] for i in true_idx]
+            hit_keywords = [keywords[i] for i in true_idx]
 
             parsed_authors = []
             if hasattr(entry, 'authors') and entry.authors:
@@ -87,7 +74,6 @@ def evaluate_authors_via_semantic_scholar(authors):
 
 
 def get_score_label_and_class(score):
-    # (この関数は変更なし)
     if score >= 100: return "世界的権威", "score-s-plus"
     elif score >= 50: return "トップ研究者", "score-s"
     elif score >= 20: return "中核研究者", "score-a"
@@ -96,7 +82,6 @@ def get_score_label_and_class(score):
 
 
 def get_score_emoji(score):
-    # (この関数は変更なし)
     if score >= 100: return "🏆"
     elif score >= 50: return "🏅"
     elif score >= 20: return "🟢"
@@ -107,7 +92,6 @@ def get_score_emoji(score):
 def extract_arxiv_id(arxiv_url):
     """arXiv URLからarXiv ID（例：2409.12345）を抽出する"""
     import re
-    # arXiv URLからIDを抽出（例：http://arxiv.org/abs/2409.12345 → 2409.12345）
     match = re.search(r'arxiv\.org/abs/(\d{4}\.\d{4,5}(?:v\d+)?)', arxiv_url)
     if match:
         return match.group(1)
@@ -284,7 +268,9 @@ def send_email_summary(paper_count, gist_url=None, local_filepath=None):
 
 
 def main():
-    papers_to_process = fetch_and_filter_papers()
+    with open('config.json', 'r') as fin:
+        config = json.load(fin)
+    papers_to_process = fetch_and_filter_papers(config['rss_feeds'], config['keywords'])
 
     processed_papers = []
     if papers_to_process:
@@ -310,9 +296,6 @@ def main():
 
     # GitHub Gistを作成（Secret Gist）
     gist_url = create_gist(markdown_report, public=False)
-
-    # ローカルにバックアップを保存
-    local_filepath = save_markdown_report_locally(markdown_report)
 
     # 論文数とGist URLを含む簡潔なメールを送信
     send_email_summary(len(processed_papers), gist_url=gist_url, local_filepath=local_filepath)
