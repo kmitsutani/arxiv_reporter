@@ -31,12 +31,6 @@ jobs:
         GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
         GMAIL_RECEIVER: ${{ secrets.GMAIL_RECEIVER }}
         GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
         python process_papers_and_email.py
-
-    - name: Commit and push report
-      run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git add reports/
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Add daily arXiv report $(date +'%Y-%m-%d')" && git push)
