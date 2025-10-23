@@ -20,5 +20,6 @@
       "https://rss.arxiv.org/rss/hep-th",
       "https://rss.arxiv.org/rss/math-ph",
       "https://rss.arxiv.org/rss/quant-ph"
-    ]
+    ],
+    "backup_dir": "~/.cache/arxiv-reporter/reports"
 }

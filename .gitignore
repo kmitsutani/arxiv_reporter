@@ -11,9 +11,6 @@ __pycache__/
 .env.local
 run_reporter.sh
 
-# Reports
-reports/
-
 # IDE
 .vscode/
 .idea/
@@ -27,3 +24,9 @@ reports/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test files
+test_*.py
+
+# Reports (now stored in ~/.cache/ or user-defined location)
+reports/

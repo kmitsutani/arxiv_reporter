@@ -4,48 +4,75 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an arXiv paper monitoring and reporting system that fetches papers from arXiv RSS feeds, filters them by keywords, evaluates authors using the Semantic Scholar API, and generates daily reports in both Markdown and HTML formats. Reports are automatically emailed to recipients.
+This is an arXiv paper monitoring and reporting system that fetches papers from arXiv RSS feeds, filters them by keywords, evaluates authors using the Semantic Scholar API, and generates daily HTML email reports with MathML-formatted mathematical expressions.
 
 ## Commands
 
 ### Running the Application
 ```bash
-# Run the main reporter (activates venv and runs the script)
-./run_reporter.sh
-
-# Or manually activate venv and run
+# Activate venv and run
 source venv/bin/activate
 python process_papers_and_email.py
 ```
 
-### Environment Setup
-The application requires these environment variables (set in run_reporter.sh):
+### Setup
+```bash
+# Install dependencies
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Environment Variables
+The application requires these environment variables:
 - `GMAIL_SENDER`: Email address for sending reports
 - `GMAIL_RECEIVER`: Email address for receiving reports
 - `GMAIL_APP_PASSWORD`: Gmail app password for authentication
-- `GH_TOKEN`: GitHub personal access token for creating Gists (requires `gist` scope)
+
+**Note**: `GH_TOKEN` is no longer required (GitHub Gist functionality has been removed).
 
 ## Architecture
 
 ### Core Workflow
-1. **Paper Fetching** (`fetch_and_filter_papers()`): Retrieves papers from multiple arXiv RSS feeds (hep-th, math-ph, quant-ph)
-2. **Keyword Filtering**: Filters papers based on predefined physics/quantum field theory keywords
-3. **Author Evaluation** (`evaluate_authors_via_semantic_scholar()`): Uses Semantic Scholar API to get author metrics (h-index, citations, paper count)
-4. **Scoring**: Papers are scored based on the highest h-index among authors
-5. **Report Generation** (`generate_markdown_report()`): Creates GitHub Flavored Markdown reports with author tables and paper rankings
-6. **Gist Creation** (`create_gist()`): Creates a secret GitHub Gist for each daily report
-7. **Local Backup** (`save_markdown_report_locally()`): Saves a local copy in `reports/{year}/{date}.md`
-8. **Email Notification** (`send_email_summary()`): Sends email with Gist URL and paper count
+1. **Configuration Loading**: Reads `config.json` for keywords, RSS feeds, and backup directory
+2. **Paper Fetching** (`fetch_and_filter_papers()`): Retrieves papers from multiple arXiv RSS feeds (hep-th, math-ph, quant-ph)
+3. **Keyword Filtering**: Filters papers based on configurable keywords
+4. **Author Evaluation** (`evaluate_authors_via_semantic_scholar()`): Uses Semantic Scholar API to get author metrics (h-index, citations, paper count)
+5. **Scoring**: Papers are scored based on the highest h-index among authors
+6. **LaTeX to MathML Conversion** (`convert_latex_to_mathml()`): Converts LaTeX math expressions to MathML for browser-native rendering
+7. **Report Generation**:
+   - `generate_markdown_report()`: Creates Markdown reports (for backup only)
+   - `generate_html_report()`: Creates styled HTML reports with MathML support
+8. **Local Backup** (`save_report_locally()`): Saves HTML and Markdown reports to user-configurable directory (default: `~/.cache/arxiv-reporter/reports`)
+9. **Email Sending** (`send_html_email()`): Sends HTML email with embedded MathML expressions
 
-### Key Configuration
+### Key Configuration (config.json)
+```json
+{
+  "keywords": [...],           // Configurable keyword list
+  "rss_feeds": [...],          // arXiv RSS feed URLs
+  "backup_dir": "~/.cache/arxiv-reporter/reports"  // Backup directory (supports tilde expansion)
+}
+```
+
 - **Keywords**: Focused on quantum field theory, algebraic QFT, conformal bootstrap, and related physics topics
 - **RSS Feeds**: arXiv high-energy physics theory, mathematical physics, and quantum physics
-- **Reports Directory**: `/home/kazuya/projects/arxiv-reporter/reports/` (local backup only)
-- **Output Format**: GitHub Flavored Markdown
-- **Distribution**: Secret GitHub Gist (new Gist created daily)
+- **Backup Directory**: User-configurable via `config.json` (default: `~/.cache/arxiv-reporter/reports`)
+- **Output Format**: HTML with inline CSS and MathML (no external dependencies)
 
-### Dependencies
-The main script imports: feedparser, markdown, pandas, requests, smtplib, and standard library modules for HTML processing, email handling, and file operations.
+### Dependencies (requirements.txt)
+- `feedparser==6.0.11`: arXiv RSS feed parsing
+- `pandas==2.3.0`: Data processing
+- `requests==2.32.4`: Semantic Scholar API calls
+- `markdown>=3.5`: Markdown processing (for backup files)
+- `latex2mathml>=3.77.0`: LaTeX to MathML conversion
+
+Standard library modules: `smtplib`, `email.mime.*`, `json`, `datetime`, `re`, `os`, `time`
+
+### MathML Support
+- **Conversion**: LaTeX expressions (`$...$` and `$$...$$`) are automatically converted to MathML
+- **Browser Support**: Chrome 109+, Firefox, Safari, Edge (native MathML support)
+- **Error Handling**: If conversion fails, displays LaTeX code in `<code>` tags with warning message
 
 ### Rate Limiting
-The application includes sleep delays (1 second) between API calls to respect Semantic Scholar rate limits.
+The application includes sleep delays (1 second) between Semantic Scholar API calls to respect rate limits.

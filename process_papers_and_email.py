@@ -3,6 +3,7 @@ import os
 import json
 import smtplib
 import time
+import re
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -10,6 +11,8 @@ from email.mime.text import MIMEText
 import feedparser
 import pandas as pd
 import requests
+import markdown
+from latex2mathml.converter import convert as latex_to_mathml
 
 
 def fetch_and_filter_papers(rss_feeds, keywords):
@@ -91,7 +94,6 @@ def get_score_emoji(score):
 
 def extract_arxiv_id(arxiv_url):
     """arXiv URLからarXiv ID（例：2409.12345）を抽出する"""
-    import re
     match = re.search(r'arxiv\.org/abs/(\d{4}\.\d{4,5}(?:v\d+)?)', arxiv_url)
     if match:
         return match.group(1)
@@ -99,8 +101,40 @@ def extract_arxiv_id(arxiv_url):
     return arxiv_url.split('/')[-1]
 
 
+def convert_latex_to_mathml(text):
+    """テキスト内のLaTeX数式をMathMLに変換する
+
+    $...$ (inline) と $$...$$ (display) の両方に対応
+    """
+    def replace_display_math(match):
+        latex = match.group(1).strip()
+        try:
+            mathml = latex_to_mathml(latex)
+            return f'<div style="text-align: center; margin: 1em 0;">{mathml}</div>'
+        except Exception as e:
+            print(f"Warning: Failed to convert display math: {latex[:50]}... Error: {e}")
+            return f'<div style="text-align: center; margin: 1em 0;"><code>{latex}</code></div>'
+
+    def replace_inline_math(match):
+        latex = match.group(1).strip()
+        try:
+            mathml = latex_to_mathml(latex)
+            return mathml
+        except Exception as e:
+            print(f"Warning: Failed to convert inline math: {latex[:50]}... Error: {e}")
+            return f'<code>{latex}</code>'
+
+    # まず $$...$$ (display math) を処理
+    text = re.sub(r'\$\$(.*?)\$\$', replace_display_math, text, flags=re.DOTALL)
+
+    # 次に $...$ (inline math) を処理
+    text = re.sub(r'\$(.*?)\$', replace_inline_math, text)
+
+    return text
+
+
 def generate_markdown_report(processed_papers):
-    """GitHub Flavored Markdownレポートを生成する"""
+    """GitHub Flavored Markdownレポートを生成する（バックアップ用）"""
     today_str = datetime.now().strftime("%Y-%m-%d")
     md_content = f"# arXiv 論文レポート ({today_str})\n\n"
 
@@ -147,74 +181,215 @@ def generate_markdown_report(processed_papers):
     return md_content
 
 
+def generate_html_report(processed_papers):
+    """HTMLレポートを生成する（MathML対応）"""
+    today_str = datetime.now().strftime("%Y-%m-%d")
 
-def create_gist(markdown_content, public=False):
-    """GitHub Gistを作成してURLを返す"""
-    github_token = os.getenv("GH_TOKEN")
-
-    if not github_token:
-        print("Warning: GH_TOKEN environment variable not set. Skipping Gist creation.")
-        return None
-
-    now = datetime.now()
-    date_str = now.strftime("%Y-%m-%d")
-    filename = f"arxiv_report_{now.strftime('%Y%m%d')}.md"
-
-    # Gist APIリクエスト
-    url = "https://api.github.com/gists"
-    headers = {
-        "Authorization": f"token {github_token}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    data = {
-        "description": f"arXiv 論文レポート ({date_str})",
-        "public": public,
-        "files": {
-            filename: {
-                "content": markdown_content
-            }
+    # CSSスタイル
+    css = """
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
         }
-    }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .paper {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #3498db;
+            border-radius: 4px;
+        }
+        .paper h2 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .paper h2 a {
+            color: #2c3e50;
+            text-decoration: none;
+        }
+        .paper h2 a:hover {
+            color: #3498db;
+        }
+        .score {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .score-s-plus { background-color: #ffd700; color: #000; }
+        .score-s { background-color: #ff6b6b; color: white; }
+        .score-a { background-color: #4ecdc4; color: white; }
+        .score-b { background-color: #45b7d1; color: white; }
+        .score-c { background-color: #95a5a6; color: white; }
+        .meta {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin: 10px 0;
+        }
+        .keywords {
+            color: #e74c3c;
+            font-weight: 500;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .abstract {
+            background-color: white;
+            padding: 15px;
+            border-left: 3px solid #95a5a6;
+            margin: 15px 0;
+            font-style: italic;
+            color: #555;
+        }
+        .no-papers {
+            text-align: center;
+            color: #7f8c8d;
+            padding: 40px;
+            font-style: italic;
+        }
+    </style>
+    """
 
-    try:
-        print(f"Creating {'public' if public else 'secret'} Gist...")
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        response.raise_for_status()
+    html_content = f"""<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>arXiv 論文レポート ({today_str})</title>
+    {css}
+</head>
+<body>
+    <div class="container">
+        <h1>arXiv 論文レポート ({today_str})</h1>
+"""
 
-        gist_data = response.json()
-        gist_url = gist_data.get("html_url")
-        print(f"Gist created successfully: {gist_url}")
+    if not processed_papers:
+        html_content += '<div class="no-papers">本日、キーワードに合致する新着論文はありませんでした。</div>'
+    else:
+        processed_papers.sort(key=lambda p: p.get("preprint_score", 0), reverse=True)
+        for paper in processed_papers:
+            score = paper.get("preprint_score", 0)
+            score_label, score_class = get_score_label_and_class(score)
+            score_emoji = get_score_emoji(score)
+            published_date = pd.to_datetime(paper['published']).strftime('%Y-%m-%d %H:%M')
 
-        return gist_url
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to create Gist: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"Response status: {e.response.status_code}")
-            print(f"Response body: {e.response.text}")
-        return None
+            html_content += f'''
+        <div class="paper">
+            <h2>{score_emoji} <a href="{paper['url']}" target="_blank">{paper['title']}</a></h2>
+            <div class="score {score_class}">Score: {score} ({score_label})</div>
+            <div class="meta">
+                <span class="keywords">Keywords: {' • '.join(paper['keywords'])}</span><br>
+                公開日: {published_date}
+            </div>
+'''
+
+            # 著者情報
+            if paper.get("authors_evaluation"):
+                html_content += '''
+            <h3>著者情報 (Semantic Scholar)</h3>
+            <table>
+                <tr>
+                    <th>著者</th>
+                    <th>h-index</th>
+                    <th>被引用数</th>
+                    <th>論文数</th>
+                </tr>
+'''
+                for author_eval in paper["authors_evaluation"]:
+                    name = author_eval['name']
+                    url = author_eval['semantic_scholar_url']
+                    h_index = author_eval['hIndex']
+                    citations = f"{author_eval['citations']:,}"
+                    papers_count = author_eval['papers']
+                    html_content += f'''
+                <tr>
+                    <td><a href="{url}" target="_blank">{name}</a></td>
+                    <td>{h_index}</td>
+                    <td>{citations}</td>
+                    <td>{papers_count}</td>
+                </tr>
+'''
+                html_content += '''
+            </table>
+'''
+
+            # アブストラクト（LaTeX数式をMathMLに変換）
+            abstract = paper.get('summary', 'N/A')
+            abstract_with_mathml = convert_latex_to_mathml(abstract)
+            html_content += f'''
+            <h3>アブストラクト (原文)</h3>
+            <div class="abstract">{abstract_with_mathml}</div>
+        </div>
+'''
+
+    html_content += """
+    </div>
+</body>
+</html>
+"""
+
+    return html_content
 
 
-def save_markdown_report_locally(markdown_content):
-    """Markdownレポートをローカルファイルとして保存する（バックアップ用）"""
+
+def save_report_locally(html_content, markdown_content, backup_dir):
+    """HTMLとMarkdownレポートをローカルファイルとして保存する（バックアップ用）"""
     now = datetime.now()
     year = now.strftime("%Y")
     date_str = now.strftime("%Y%m%d")
 
-    # ディレクトリ作成（reportsディレクトリ以下に保存）
-    report_dir = os.path.join(REPORTS_DIR, year)
+    # チルダ展開とディレクトリ作成
+    backup_dir = os.path.expanduser(backup_dir)
+    report_dir = os.path.join(backup_dir, year)
     os.makedirs(report_dir, exist_ok=True)
+
+    # HTMLファイル保存
+    html_filepath = os.path.join(report_dir, f"{date_str}.html")
+    with open(html_filepath, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    print(f"HTML report saved locally: {html_filepath}")
 
     # Markdownファイル保存
     md_filepath = os.path.join(report_dir, f"{date_str}.md")
     with open(md_filepath, "w", encoding="utf-8") as f:
         f.write(markdown_content)
-
     print(f"Markdown report saved locally: {md_filepath}")
-    return md_filepath
+
+    return html_filepath, md_filepath
 
 
-def send_email_summary(paper_count, gist_url=None):
-    """論文数とGist URLを含む簡潔なメールを送信する"""
+def send_html_email(html_content, paper_count):
+    """HTMLメールを送信する（MathML対応）"""
     sender_email = os.getenv("GMAIL_SENDER")
     receiver_email = os.getenv("GMAIL_RECEIVER")
     app_password = os.getenv("GMAIL_APP_PASSWORD")
@@ -224,33 +399,29 @@ def send_email_summary(paper_count, gist_url=None):
         print("Skipping email sending.")
         return
 
-    print("\nSending email summary...")
+    print("\nSending HTML email...")
 
     today_str = datetime.now().strftime("%Y-%m-%d")
 
     # メールメッセージの作成
     msg = MIMEMultipart('alternative')
-    msg['Subject'] = f"arXiv デイリーレポート ({today_str})"
+    msg['Subject'] = f"arXiv デイリーレポート ({today_str}) - {paper_count}件"
     msg['From'] = sender_email
     msg['To'] = receiver_email
 
-    # メール本文を作成
-    if gist_url:
-        email_body = f"""arXiv デイリーレポート ({today_str})
+    # テキストパート（フォールバック用）
+    text_body = f"""arXiv デイリーレポート ({today_str})
 
 本日の関連論文数: {paper_count}件
 
-レポート閲覧: {gist_url}
+※このメールはHTML形式で表示してください。
 """
-    else:
-        email_body = f"""arXiv デイリーレポート ({today_str})
-
-本日の関連論文数: {paper_count}件
-"""
-
-    # テキストパートのアタッチ
-    part_text = MIMEText(email_body, 'plain', 'utf-8')
+    part_text = MIMEText(text_body, 'plain', 'utf-8')
     msg.attach(part_text)
+
+    # HTMLパート
+    part_html = MIMEText(html_content, 'html', 'utf-8')
+    msg.attach(part_html)
 
     # GmailのSMTPサーバーに接続して送信
     try:
@@ -258,16 +429,20 @@ def send_email_summary(paper_count, gist_url=None):
         server.login(sender_email, app_password)
         server.send_message(msg)
         server.quit()
-        print(f"Email sent successfully to {receiver_email}!")
+        print(f"HTML email sent successfully to {receiver_email}!")
     except Exception as e:
         print(f"Failed to send email: {e}")
 
 
 def main():
-    with open('config.json', 'r') as fin:
+    # 設定ファイルを読み込む
+    with open('config.json', 'r', encoding='utf-8') as fin:
         config = json.load(fin)
+
+    # 論文を取得してフィルタリング
     papers_to_process = fetch_and_filter_papers(config['rss_feeds'], config['keywords'])
 
+    # 著者評価とスコアリング
     processed_papers = []
     if papers_to_process:
         for i, paper in enumerate(papers_to_process):
@@ -287,14 +462,18 @@ def main():
 
     print("\nAll processing finished!")
 
-    # Markdownレポートを生成
+    # Markdownレポートを生成（バックアップ用）
     markdown_report = generate_markdown_report(processed_papers)
 
-    # GitHub Gistを作成（Secret Gist）
-    gist_url = create_gist(markdown_report, public=False)
+    # HTMLレポートを生成（MathML対応）
+    html_report = generate_html_report(processed_papers)
 
-    # 論文数とGist URLを含む簡潔なメールを送信
-    send_email_summary(len(processed_papers), gist_url=gist_url)
+    # ローカルにバックアップ保存
+    backup_dir = config.get('backup_dir', '~/.cache/arxiv-reporter/reports')
+    save_report_locally(html_report, markdown_report, backup_dir)
+
+    # HTMLメールを送信
+    send_html_email(html_report, len(processed_papers))
 
 
 if __name__ == "__main__":
